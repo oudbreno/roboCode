@@ -1,5 +1,12 @@
 package PrimeiroRoboMata;
 import robocode.*;
+import robocode.util.Utils;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Random;
+import java.awt.Color;
+import java.awt.Graphics2D;
 //import java.awt.Color;
 
 // API help : https://robocode.sourceforge.io/docs/robocode/robocode/Robot.html
@@ -7,51 +14,63 @@ import robocode.*;
 /**
  * RoboMatadorDePorco - a robot by (your name here)
  */
-public class RoboMatadorDePorco extends Robot
+public class RoboMatadorDePorco extends AdvancedRobot
 {
-	/**
-	 * run: RoboMatadorDePorco's default behavior
-	 */
+	private Inimigo inimigo = new Inimigo();
+	private Modulos modulos = new Modulos();
+	private List<OndaInimiga> ondas = new ArrayList<OndaInimiga>();
+	private int ondasCriadas = 0;
+
 	public void run() {
-		// Initialization of the robot should be put here
-
-		// After trying out your robot, try uncommenting the import at the top,
-		// and the next line:
-
-		// setColors(Color.red,Color.blue,Color.green); // body,gun,radar
-
-		// Robot main loop
-		while(true) {
-			// Replace the next 4 lines with any behavior you would like
-			ahead(100);
-			turnGunRight(360);
-			back(100);
-			turnGunRight(360);
-			fire(3);
+		setAdjustGunForRobotTurn(true);
+		setAdjustRadarForGunTurn(true);
+		setAdjustRadarForRobotTurn(true);
+		setTurnRadarRightRadians(Double.POSITIVE_INFINITY);
+		while(true){
+			Modulos.controlaCamera(inimigo.tempoScan , this);
+			modulos.orbitar(this, ondas, inimigo);
+			execute();
 		}
 	}
 
-	/**
-	 * onScannedRobot: What to do when you see another robot
-	 */
 	public void onScannedRobot(ScannedRobotEvent e) {
-		// Replace the next line with any behavior you would like
-		fire(1);
+		inimigo.atualizar(e, this);
+
+		if (inimigo.provavelDisparo()) {
+            double potencia = inimigo.quedaEnergia();
+            ondas.add(new OndaInimiga(
+                    inimigo,
+                    inimigo.xAnterior, inimigo.yAnterior,        
+                    Rules.getBulletSpeed(potencia),
+                    inimigo.anguloParaNos2,                      
+                    inimigo.dirLateral2,
+                    getTime() - 1));    
+			ondasCriadas++;                        
+        }
+
+		Modulos.moveScanner(e, this);
 	}
 
-	/**
-	 * onHitByBullet: What to do when you're hit by a bullet
-	 */
+	public void onBulletHit(BulletHitEvent e) {         
+        inimigo.ajustarEnergia(-Rules.getBulletDamage(e.getBullet().getPower()));
+    }
+
 	public void onHitByBullet(HitByBulletEvent e) {
-		// Replace the next line with any behavior you would like
-		back(10);
+		inimigo.ajustarEnergia(Rules.getBulletHitBonus(e.getPower()));
+        modulos.registrarTiro(e.getBullet(), ondas, this);
 	}
+
+	public void onHitRobot(HitRobotEvent e) {            
+        inimigo.ajustarEnergia(-0.6);
+    }
+
+    public void onBulletHitBullet(BulletHitBulletEvent e) {   
+        modulos.registrarTiro(e.getHitBullet(), ondas, this);                     
+    }
 	
-	/**
-	 * onHitWall: What to do when you hit a wall
-	 */
 	public void onHitWall(HitWallEvent e) {
-		// Replace the next line with any behavior you would like
-		back(20);
+		modulos.sentido = -modulos.sentido;
 	}	
 }
+
+
