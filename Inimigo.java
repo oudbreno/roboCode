@@ -5,7 +5,12 @@ import robocode.util.Utils;
 
 public class Inimigo {
     public static final int DIVISOES = 47;
+    public static final int FAIXAS = 5;
 
+    public static final int ARMAS = 4;
+    public double[] notas = new double[ARMAS];
+
+    public double[][][] fatores = new double[FAIXAS][FAIXAS][DIVISOES];
     public static String nome;
     public double distancia;
 	public double ultimoScan;
@@ -116,16 +121,40 @@ public class Inimigo {
         }
     }
 
-    public void imprimir() {
-    System.out.println("=== " + nome + " (tick " + tempoScan + ") ===");
-    System.out.printf("Posição: x=%.1f y=%.1f%n", x, y);
-    System.out.printf("Distância: %.1f%n", distancia);
-    System.out.printf("Energia: %.1f (anterior: %.1f)%n", energia, energiaAnterior);
-    System.out.printf("Direção: %.3f rad (anterior: %.3f)%n", direcao, direcaoAnterior);
-    System.out.printf("Velocidade: %.1f (anterior: %.1f)%n", velocidade, velocidadeAnterior);
-    System.out.printf("Delta direção: %.4f rad/tick%n", deltaDirecao);
-    System.out.printf("Velocidade lateral: %.2f%n", velocidadeLateral);
-    System.out.println("Ticks parado: " + ticksParado);
-    System.out.println("Provável disparo: " + provavelDisparo());
+    public static int faixaDistancia(double distancia) {
+    return Math.min(FAIXAS - 1, (int) (distancia / 200));
+    }
+
+    public static int faixaLateral(double velocidadeLateral) {
+    return Math.min(FAIXAS - 1, (int) (Math.abs(velocidadeLateral) / 1.6));   
+    }
+
+    public void registrarFator(int faixaDist, int faixaLat, int divisao) {
+        fatores[faixaDist][faixaLat][divisao] += 1;
+    }
+
+    public int melhorDivisao(int faixaDist, int faixaLat) {
+        double[] tabela = fatores[faixaDist][faixaLat];
+        int melhor = DIVISOES / 2;
+        double maior = 0;
+        for (int i = 0; i < DIVISOES; i++) {
+            if (tabela[i] > maior) {
+                maior = tabela[i];
+                melhor = i;
+            }
+        }
+        return melhor;
+    }
+
+    public void atualizarNota(int arma, boolean acertou) {
+        notas[arma] += ((acertou ? 1.0 : 0.0) - notas[arma]) / 30.0;
+    }
+
+    public int melhorArma(int padrao) {
+        int melhor = padrao;
+        for (int i = 0; i < ARMAS; i++) {
+            if (notas[i] > notas[melhor]) melhor = i;
+        }
+        return melhor;
     }
 }

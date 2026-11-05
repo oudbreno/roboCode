@@ -16,6 +16,12 @@ public class Modulos{
     private long proximaTroca = 0;
     private Random aleatorio = new Random();
 
+    private static final int MIRA_DIRETA = 0;
+    private static final int MIRA_LINEAR = 1;
+    private static final int MIRA_CIRCULAR = 2;
+    private static final int MIRA_GUESSFACTOR = 3;
+    private static final int TICKS_PARADO_DIRETA = 2;
+
     public static void controlaCamera(long tempoScan, AdvancedRobot robo){
 		if (robo.getTime() - tempoScan > 1) {
         robo.setTurnRadarRightRadians(Double.POSITIVE_INFINITY);
@@ -154,5 +160,112 @@ public class Modulos{
             }
         }
         return melhor;
+    }
+
+    private int escolherArma(Inimigo inimigo) {
+        boolean parado = inimigo.ticksParado >= TICKS_PARADO_DIRETA;
+        boolean desabilitado = inimigo.energia <= 0;
+        if (parado || desabilitado) return MIRA_DIRETA;
+
+        return inimigo.melhorArma(MIRA_CIRCULAR);
+    }
+
+    public void mirarEAtirar(Inimigo inimigo, AdvancedRobot robo) {
+        if (inimigo.nome == null || robo.getTime() - inimigo.tempoScan > 1) return;
+
+        double potencia = escolherPotencia(robo, inimigo);
+        if (potencia < 0.1) return;
+        double velBala = Rules.getBulletSpeed(potencia);
+
+        double angulo = anguloDaArma(escolherArma(inimigo), velBala, robo, inimigo);
+        robo.setTurnGunRightRadians(Utils.normalRelativeAngle(angulo - robo.getGunHeadingRadians()));
+
+        double tolerancia = Math.atan(18 / inimigo.distancia);
+        if (robo.getGunHeat() == 0 && Math.abs(robo.getGunTurnRemainingRadians()) < tolerancia) {
+            robo.setFire(potencia);
+        }
+    }
+
+    private double escolherPotencia(AdvancedRobot robo, Inimigo inimigo) {
+        double p = inimigo.distancia < 150 ? 3 : (inimigo.distancia < 400 ? 2 : 1);
+        return Math.min(p, robo.getEnergy() - 0.1);  
+    }
+
+    private double anguloDaArma(int arma, double velBala, AdvancedRobot robo, Inimigo inimigo) {
+        double anguloDireto = Math.atan2(inimigo.x - robo.getX(), inimigo.y - robo.getY());
+
+        switch (arma) {
+            case MIRA_LINEAR:
+            case MIRA_CIRCULAR: {
+                Point2D.Double p = preverAlvo(arma == MIRA_CIRCULAR, velBala, robo, inimigo);
+                return Math.atan2(p.x - robo.getX(), p.y - robo.getY());
+            }
+            case MIRA_GUESSFACTOR: {
+                int divisao = inimigo.melhorDivisao(Inimigo.faixaDistancia(inimigo.distancia),
+                                                    Inimigo.faixaLateral(inimigo.velocidadeLateral));
+                double gf = divisao * 2.0 / (Inimigo.DIVISOES - 1) - 1;
+                int dir = inimigo.velocidadeLateral >= 0 ? 1 : -1;
+                return anguloDireto + gf * Math.asin(8.0 / velBala) * dir;
+            }
+            default:
+                return anguloDireto;
+        }
+    }
+
+    private Point2D.Double preverAlvo(boolean circular, double velBala, AdvancedRobot robo, Inimigo inimigo) {
+        double ex = inimigo.x, ey = inimigo.y;
+        double rumo = inimigo.direcao;
+
+        double minX = MARGEM_PAREDE, maxX = robo.getBattleFieldWidth() - MARGEM_PAREDE;
+        double minY = MARGEM_PAREDE, maxY = robo.getBattleFieldHeight() - MARGEM_PAREDE;
+
+        for (int t = 1; t <= 1000; t++) {
+            if (circular) rumo += inimigo.deltaDirecao;
+            ex += Math.sin(rumo) * inimigo.velocidade;
+            ey += Math.cos(rumo) * inimigo.velocidade;
+
+            ex = Math.max(minX, Math.min(maxX, ex));
+            ey = Math.max(minY, Math.min(maxY, ey));
+
+            if (Point2D.distance(robo.getX(), robo.getY(), ex, ey) <= t * velBala) break;
+        }
+        return new Point2D.Double(ex, ey);
+    }
+
+    public void lancarOndaPropria(AdvancedRobot robo, Inimigo inimigo, List<OndaPropria> ondasPropria) {
+        double velBala = Rules.getBulletSpeed(Math.max(0.1, escolherPotencia(robo, inimigo)));
+        double anguloDireto = Math.atan2(inimigo.x - robo.getX(), inimigo.y - robo.getY());
+        int dir = inimigo.velocidadeLateral >= 0 ? 1 : -1;
+
+        double[] angulos = new double[Inimigo.ARMAS];
+        for (int i = 0; i < Inimigo.ARMAS; i++) {
+            angulos[i] = anguloDaArma(i, velBala, robo, inimigo);
+        }
+
+        ondasPropria.add(new OndaPropria(robo.getX(), robo.getY(), velBala, anguloDireto, dir, robo.getTime(),
+                Inimigo.faixaDistancia(inimigo.distancia),
+                Inimigo.faixaLateral(inimigo.velocidadeLateral), angulos));
+    }
+
+    public void processarOndasPropria(AdvancedRobot robo, Inimigo inimigo, List<OndaPropria> ondasPropria) {
+        if (inimigo.nome == null || robo.getTime() - inimigo.tempoScan > 1) return;
+
+        Iterator<OndaPropria> it = ondasPropria.iterator();
+        while (it.hasNext()) {
+            OndaPropria o = it.next();
+            double dist = Point2D.distance(o.x, o.y, inimigo.x, inimigo.y);
+
+            if (o.distanciaPercorrida(robo.getTime()) > dist - 18) {
+                inimigo.registrarFator(o.segDistancia, o.segLateral, o.divisaoDe(inimigo.x, inimigo.y));
+
+                double anguloReal = Math.atan2(inimigo.x - o.x, inimigo.y - o.y);
+                double tolerancia = Math.atan(18 / dist);
+                for (int i = 0; i < Inimigo.ARMAS; i++) {
+                    double erro = Math.abs(Utils.normalRelativeAngle(anguloReal - o.angulos[i]));
+                    inimigo.atualizarNota(i, erro < tolerancia);
+                }
+                it.remove();
+            }
+        }
     }
 }

@@ -16,10 +16,12 @@ import java.awt.Graphics2D;
  */
 public class RoboMatadorDePorco extends AdvancedRobot
 {
-	private Inimigo inimigo = new Inimigo();
+	private static Inimigo inimigo = new Inimigo();
 	private Modulos modulos = new Modulos();
 	private List<OndaInimiga> ondas = new ArrayList<OndaInimiga>();
 	private int ondasCriadas = 0;
+
+	private List<OndaPropria> ondasPropria = new ArrayList<OndaPropria>();
 
 	public void run() {
 		setAdjustGunForRobotTurn(true);
@@ -29,12 +31,16 @@ public class RoboMatadorDePorco extends AdvancedRobot
 		while(true){
 			Modulos.controlaCamera(inimigo.tempoScan , this);
 			modulos.orbitar(this, ondas, inimigo);
+			modulos.processarOndasPropria(this, inimigo, ondasPropria);
+			modulos.mirarEAtirar(inimigo, this);
 			execute();
 		}
 	}
 
 	public void onScannedRobot(ScannedRobotEvent e) {
 		inimigo.atualizar(e, this);
+
+		modulos.lancarOndaPropria(this, inimigo, ondasPropria);
 
 		if (inimigo.provavelDisparo()) {
             double potencia = inimigo.quedaEnergia();
