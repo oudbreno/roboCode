@@ -1,57 +1,92 @@
 package PrimeiroRoboMata;
 import robocode.*;
-//import java.awt.Color;
+import robocode.util.Utils;
+import java.awt.Color;
 
 // API help : https://robocode.sourceforge.io/docs/robocode/robocode/Robot.html
 
 /**
- * RoboMatadorDePorco - a robot by (your name here)
+ * RoboMatadorDePorco
+ *
+ * Nesta branch (closeRange-state) só existe o estado de curta distância.
+ * Quando o inimigo está longe o robô apenas se aproxima, pra dar pra testar o close-range.
+ * Na hora de juntar com os outros estados, é só chamar closeRange.agir(...) quando
+ * a distância for menor que CloseRange.DISTANCIA_MAXIMA.
  */
-public class RoboMatadorDePorco extends Robot
+public class RoboMatadorDePorco extends AdvancedRobot
 {
-	/**
-	 * run: RoboMatadorDePorco's default behavior
-	 */
+	private CloseRange closeRange = new CloseRange();
+	private long ultimoScan = 0;
+	private double inimigoX = -1, inimigoY = -1;
+
 	public void run() {
-		// Initialization of the robot should be put here
+		setColors(Color.red, Color.black, Color.white); // corpo, arma, radar
 
-		// After trying out your robot, try uncommenting the import at the top,
-		// and the next line:
+		// arma e radar giram independentes do corpo
+		setAdjustGunForRobotTurn(true);
+		setAdjustRadarForGunTurn(true);
+		setAdjustRadarForRobotTurn(true);
 
-		// setColors(Color.red,Color.blue,Color.green); // body,gun,radar
+		setTurnRadarRightRadians(Double.POSITIVE_INFINITY);
 
-		// Robot main loop
 		while(true) {
-			// Replace the next 4 lines with any behavior you would like
-			ahead(100);
-			turnGunRight(360);
-			back(100);
-			turnGunRight(360);
-			fire(3);
+			// perdeu o inimigo de vista? volta a girar o radar
+			if (getTime() - ultimoScan > 1) {
+				setTurnRadarRightRadians(Double.POSITIVE_INFINITY);
+			}
+			execute();
 		}
 	}
 
-	/**
-	 * onScannedRobot: What to do when you see another robot
-	 */
 	public void onScannedRobot(ScannedRobotEvent e) {
-		// Replace the next line with any behavior you would like
-		fire(1);
+		ultimoScan = getTime();
+
+		// guarda onde o inimigo está, só pro desenho de debug
+		double angulo = getHeadingRadians() + e.getBearingRadians();
+		inimigoX = getX() + Math.sin(angulo) * e.getDistance();
+		inimigoY = getY() + Math.cos(angulo) * e.getDistance();
+		travarRadar(e);
+
+		if (e.getDistance() < CloseRange.DISTANCIA_MAXIMA) {
+			closeRange.agir(e, this);
+		} else {
+			// provisório: só chega mais perto (aqui entram os outros estados)
+			setTurnRight(e.getBearing());
+			setAhead(e.getDistance() - 150);
+		}
 	}
 
-	/**
-	 * onHitByBullet: What to do when you're hit by a bullet
-	 */
 	public void onHitByBullet(HitByBulletEvent e) {
-		// Replace the next line with any behavior you would like
-		back(10);
+		closeRange.inverterSentido();
 	}
-	
-	/**
-	 * onHitWall: What to do when you hit a wall
-	 */
+
 	public void onHitWall(HitWallEvent e) {
-		// Replace the next line with any behavior you would like
-		back(20);
-	}	
+		closeRange.inverterSentido();
+	}
+
+	// desenho de debug: aparece ao clicar no robô e ligar "Paint" na janela da batalha
+	public void onPaint(java.awt.Graphics2D g) {
+		if (inimigoX < 0) return;
+
+		// amarelo: até onde o close-range funciona
+		int max = (int) CloseRange.DISTANCIA_MAXIMA;
+		g.setColor(Color.yellow);
+		g.drawOval((int) inimigoX - max, (int) inimigoY - max, max * 2, max * 2);
+
+		// verde: distância que o robô tenta manter
+		int ideal = (int) CloseRange.DISTANCIA_IDEAL;
+		g.setColor(Color.green);
+		g.drawOval((int) inimigoX - ideal, (int) inimigoY - ideal, ideal * 2, ideal * 2);
+
+		// linha até o inimigo
+		g.setColor(Color.red);
+		g.drawLine((int) getX(), (int) getY(), (int) inimigoX, (int) inimigoY);
+	}
+
+	// mantém o radar sempre em cima do inimigo
+	private void travarRadar(ScannedRobotEvent e) {
+		double anguloInimigo = getHeadingRadians() + e.getBearingRadians();
+		double diferenca = Utils.normalRelativeAngle(anguloInimigo - getRadarHeadingRadians());
+		setTurnRadarRightRadians(2 * diferenca);
+	}
 }
