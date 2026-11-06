@@ -1,81 +1,111 @@
 package PrimeiroRoboMata;
 import robocode.*;
+import robocode.util.Utils;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Random;
 import java.awt.Color;
+import java.awt.Graphics2D;
+import PrimeiroRoboMata.NormalMode.AntiGravityBot;
+//import java.awt.Color;
 
 // API help : https://robocode.sourceforge.io/docs/robocode/robocode/Robot.html
 
 /**
- * RoboMatadorDePorco - robô principal da equipe.
+ * RoboMatadorDePorco - robo principal da equipe
  *
- * Junta os 4 estados. A ordem de prioridade é:
- *   1) HalfLife   - nossa energia em 50 ou menos (Augusto)
- *   2) X1         - só sobrou 1 inimigo (Arthur)
- *   3) CloseRange - inimigo mais próximo a menos de 250px (Bernardo)
- *   4) Normal     - vários inimigos longe (Richard)
+ * Cada estado continua no arquivo de quem fez:
+ *   HalfLife.java              - Augusto  (nossa energia em 50 ou menos)
+ *   Modulos/Inimigo/Ondas      - Arthur   (so sobrou 1 inimigo)
+ *   CloseRange.java            - Bernardo (inimigo a menos de 250px)
+ *   NormalMode/AntiGravityBot  - Richard  (varios inimigos)
+ *
+ * Ordem: HalfLife > X1 > CloseRange > Normal
  */
-public class RoboMatadorDePorco extends AdvancedRobot
+public class RoboMatadorDePorco extends AntiGravityBot
 {
 	private static final int NORMAL = 0;
 	private static final int X1 = 1;
 	private static final int CLOSE_RANGE = 2;
 	private static final int HALF_LIFE = 3;
-
 	private int estado = NORMAL;
 
-	// x1
 	private static Inimigo inimigo = new Inimigo();
 	private Modulos modulos = new Modulos();
 	private List<OndaInimiga> ondas = new ArrayList<OndaInimiga>();
+	private int ondasCriadas = 0;
+
 	private List<OndaPropria> ondasPropria = new ArrayList<OndaPropria>();
 
-	// outros estados
 	private CloseRange closeRange = new CloseRange();
 	private HalfLife halfLife = new HalfLife();
-	private ModoNormal modoNormal = new ModoNormal();
+
+	// inimigo mais perto (usado pra saber quando entra o close-range)
+	private String maisPerto = null;
+	private double distanciaMaisPerto = Double.MAX_VALUE;
 
 	public void run() {
-		setColors(Color.red, Color.black, Color.white);
-
 		setAdjustGunForRobotTurn(true);
 		setAdjustRadarForGunTurn(true);
 		setAdjustRadarForRobotTurn(true);
 		setTurnRadarRightRadians(Double.POSITIVE_INFINITY);
-
 		while(true){
+			if (estado == NORMAL) {
+				// o modo do Richard fica rodando ate o onScannedRobot chamar stopNormalState()
+				NormalStateMode();
+			}
+
 			if (getOthers() == 1) {
-				// 1x1: radar fica travado no inimigo (se perder, gira de novo)
 				Modulos.controlaCamera(inimigo.tempoScan , this);
 				modulos.processarOndasPropria(this, inimigo, ondasPropria);
 			} else {
-				// vários inimigos: radar gira sem parar pra ver todo mundo
 				setTurnRadarRightRadians(Double.POSITIVE_INFINITY);
 			}
 
-			// x1 e normal rodam todo tick; close-range e half-life rodam no onScannedRobot
 			if (estado == X1) {
 				modulos.orbitar(this, ondas, inimigo);
 				modulos.mirarEAtirar(inimigo, this);
-			} else if (estado == NORMAL) {
-				modoNormal.agir(this);
 			}
-
 			execute();
 		}
 	}
 
 	public void onScannedRobot(ScannedRobotEvent e) {
-		modoNormal.AddToList(e, this);
+		super.onScannedRobot(e); // lista de inimigos do modo normal
+
+		if (e.getName().equals(maisPerto) || e.getDistance() < distanciaMaisPerto) {
+			maisPerto = e.getName();
+			distanciaMaisPerto = e.getDistance();
+		}
 
 		if (getOthers() == 1) {
-			atualizarX1(e);
+			inimigo.atualizar(e, this);
+
+			modulos.lancarOndaPropria(this, inimigo, ondasPropria);
+
+			if (inimigo.provavelDisparo()) {
+	            double potencia = inimigo.quedaEnergia();
+	            ondas.add(new OndaInimiga(
+	                    inimigo,
+	                    inimigo.xAnterior, inimigo.yAnterior,
+	                    Rules.getBulletSpeed(potencia),
+	                    inimigo.anguloParaNos2,
+	                    inimigo.dirLateral2,
+	                    getTime() - 1));
+				ondasCriadas++;
+	        }
+
+			Modulos.moveScanner(e, this);
 		}
 
 		estado = escolherEstado();
+		if (estado != NORMAL) {
+			stopNormalState();
+		}
 
-		// close-range e half-life só reagem ao inimigo mais perto
-		if (!e.getName().equals(modoNormal.maisProximo().name)) return;
+		// half-life e close-range so reagem ao inimigo mais perto
+		if (!e.getName().equals(maisPerto)) return;
 
 		if (estado == HALF_LIFE) {
 			halfLife.agir(e, this);
@@ -87,52 +117,29 @@ public class RoboMatadorDePorco extends AdvancedRobot
 	private int escolherEstado() {
 		if (HalfLife.ativo(this)) return HALF_LIFE;
 		if (getOthers() == 1) return X1;
-
-		ModoNormal.EnemyInfo perto = modoNormal.maisProximo();
-		if (perto != null && perto.distance < CloseRange.DISTANCIA_MAXIMA) return CLOSE_RANGE;
-
+		if (distanciaMaisPerto < CloseRange.DISTANCIA_MAXIMA) return CLOSE_RANGE;
 		return NORMAL;
 	}
 
-	// tudo que o x1 precisa saber a cada scan (do Arthur)
-	private void atualizarX1(ScannedRobotEvent e) {
-		inimigo.atualizar(e, this);
-
-		modulos.lancarOndaPropria(this, inimigo, ondasPropria);
-
-		if (inimigo.provavelDisparo()) {
-			double potencia = inimigo.quedaEnergia();
-			ondas.add(new OndaInimiga(
-					inimigo,
-					inimigo.xAnterior, inimigo.yAnterior,
-					Rules.getBulletSpeed(potencia),
-					inimigo.anguloParaNos2,
-					inimigo.dirLateral2,
-					getTime() - 1));
-		}
-
-		Modulos.moveScanner(e, this);
-	}
-
 	public void onBulletHit(BulletHitEvent e) {
-		inimigo.ajustarEnergia(-Rules.getBulletDamage(e.getBullet().getPower()));
-	}
+        inimigo.ajustarEnergia(-Rules.getBulletDamage(e.getBullet().getPower()));
+    }
 
 	public void onHitByBullet(HitByBulletEvent e) {
 		inimigo.ajustarEnergia(Rules.getBulletHitBonus(e.getPower()));
-		modulos.registrarTiro(e.getBullet(), ondas, this);
+        modulos.registrarTiro(e.getBullet(), ondas, this);
 
 		if (estado == CLOSE_RANGE) closeRange.inverterSentido();
 		if (estado == HALF_LIFE) halfLife.inverterSentido();
 	}
 
 	public void onHitRobot(HitRobotEvent e) {
-		inimigo.ajustarEnergia(-0.6);
-	}
+        inimigo.ajustarEnergia(-0.6);
+    }
 
-	public void onBulletHitBullet(BulletHitBulletEvent e) {
-		modulos.registrarTiro(e.getHitBullet(), ondas, this);
-	}
+    public void onBulletHitBullet(BulletHitBulletEvent e) {
+        modulos.registrarTiro(e.getHitBullet(), ondas, this);
+    }
 
 	public void onHitWall(HitWallEvent e) {
 		modulos.sentido = -modulos.sentido;
@@ -141,6 +148,11 @@ public class RoboMatadorDePorco extends AdvancedRobot
 	}
 
 	public void onRobotDeath(RobotDeathEvent e) {
-		modoNormal.removerInimigo(e.getName());
+		super.onRobotDeath(e); // tira da lista do modo normal
+
+		if (e.getName().equals(maisPerto)) {
+			maisPerto = null;
+			distanciaMaisPerto = Double.MAX_VALUE;
+		}
 	}
 }
