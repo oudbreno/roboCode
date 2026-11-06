@@ -1,0 +1,15 @@
+# Arquivos compilados (o Robocode gera de novo ao compilar)
+*.class
+
+# Pacotes gerados pelo Robocode
+*.jar
+
+# Configurações de editor
+.vscode/
+.idea/
+*.iml
+
+# Lixo do sistema
+Thumbs.db
+desktop.ini
+.DS_Store
