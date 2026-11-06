@@ -13,15 +13,7 @@ import PrimeiroRoboMata.NormalMode.AntiGravityBot;
 // API help : https://robocode.sourceforge.io/docs/robocode/robocode/Robot.html
 
 /**
- * RoboMatadorDePorco - robo principal da equipe
- *
- * Cada estado continua no arquivo de quem fez:
- *   HalfLife.java              - Augusto  (nossa energia em 50 ou menos)
- *   Modulos/Inimigo/Ondas      - Arthur   (so sobrou 1 inimigo)
- *   CloseRange.java            - Bernardo (inimigo a menos de 250px)
- *   NormalMode/AntiGravityBot  - Richard  (varios inimigos)
- *
- * Ordem: HalfLife > X1 > CloseRange > Normal
+ * RoboMatadorDePorco - a robot by (your name here)
  */
 public class RoboMatadorDePorco extends AntiGravityBot
 {
@@ -41,7 +33,6 @@ public class RoboMatadorDePorco extends AntiGravityBot
 	private CloseRange closeRange = new CloseRange();
 	private HalfLife halfLife = new HalfLife();
 
-	// inimigo mais perto (usado pra saber quando entra o close-range)
 	private String maisPerto = null;
 	private double distanciaMaisPerto = Double.MAX_VALUE;
 
@@ -52,7 +43,6 @@ public class RoboMatadorDePorco extends AntiGravityBot
 		setTurnRadarRightRadians(Double.POSITIVE_INFINITY);
 		while(true){
 			if (estado == NORMAL) {
-				// o modo do Richard fica rodando ate o onScannedRobot chamar stopNormalState()
 				NormalStateMode();
 			}
 
@@ -72,7 +62,7 @@ public class RoboMatadorDePorco extends AntiGravityBot
 	}
 
 	public void onScannedRobot(ScannedRobotEvent e) {
-		super.onScannedRobot(e); // lista de inimigos do modo normal
+		super.onScannedRobot(e);
 
 		if (e.getName().equals(maisPerto) || e.getDistance() < distanciaMaisPerto) {
 			maisPerto = e.getName();
@@ -104,7 +94,6 @@ public class RoboMatadorDePorco extends AntiGravityBot
 			stopNormalState();
 		}
 
-		// half-life e close-range so reagem ao inimigo mais perto
 		if (!e.getName().equals(maisPerto)) return;
 
 		if (estado == HALF_LIFE) {
@@ -148,7 +137,7 @@ public class RoboMatadorDePorco extends AntiGravityBot
 	}
 
 	public void onRobotDeath(RobotDeathEvent e) {
-		super.onRobotDeath(e); // tira da lista do modo normal
+		super.onRobotDeath(e);
 
 		if (e.getName().equals(maisPerto)) {
 			maisPerto = null;
